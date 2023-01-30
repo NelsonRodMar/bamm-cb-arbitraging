@@ -8,21 +8,30 @@ import {ISwapRouter} from "./interfaces/ISwapRouter.sol";
 import {IBAmm} from "./interfaces/IBAmm.sol";
 import {TransferHelper} from "./librairies/TransferHelper.sol";
 import {IWETH9} from "./interfaces/IWETH9.sol";
+import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
+/**
+* @title BammArbitrage
+* @notice This contract is used to arbitrage B.Protocol Chicken Bond Stability Pool via flash loan
+* @author @NelsonRodMar.lens
+ */
 contract BammArbitrage is FlashLoanSimpleReceiverBase {
-    ISwapRouter public immutable swapRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-    IBAmm public immutable bamm = IBAmm(0x896d8a30C32eAd64f2e1195C2C8E0932Be7Dc20B);
-    IWETH9 public immutable iWETH9 = IWETH9(payable(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
+    using SafeMath for uint256;
 
     address public constant LUSD = 0x5f98805A4E8be255a32880FDeC7F6728C6568bA0;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    uint24 public constant poolFee = 3000; // 0.3%
-    uint160 constant MIN_SQRT_RATIO = 4295128739;
+    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    uint24 public constant poolFee = 500; // 0.5%
+    uint160 public constant MIN_SQRT_RATIO = 4295128739;
+
+    ISwapRouter public immutable swapRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    IBAmm public immutable bamm = IBAmm(0x896d8a30C32eAd64f2e1195C2C8E0932Be7Dc20B);
+    IWETH9 public immutable iWETH9 = IWETH9(payable(WETH));
 
     mapping(address => bool) public isAuthorized;
 
     modifier onlyAuthorized() {
-        require(isAuthorized[msg.sender], "LQTYArb: not authorized");
+        require(isAuthorized[msg.sender], "BammArbitrage: not authorized");
         _;
     }
 
@@ -33,17 +42,23 @@ contract BammArbitrage is FlashLoanSimpleReceiverBase {
     /*
     * This function initiates the flash loan
     */
-    function requestFlashLoan(uint256 _amount) external onlyAuthorized {
-        // FlashLoan of wETH to buy LUSD
+    function requestFlashLoan() external onlyAuthorized {
+        // Calcul the amount of wETH to flash loan
+        (, ,uint _amountInLusd) = bamm.getLUSDValue();
+        (,uint _feeAmount) = bamm.getSwapEthAmount(_amountInLusd);
+        uint _amountInLusdLessFee = _amountInLusd.sub(_feeAmount);
+        (uint _amountInwETH,) = bamm.getSwapEthAmount(_amountInLusdLessFee);
+
+        // FlashLoan the wETH
         POOL.flashLoanSimple(
             address(this),
-            WETH,
-            _amount,
-            "",
+            address(iWETH9),
+            _amountInwETH,
+            abi.encode(msg.sender, _amountInLusdLessFee),
             0
         );
 
-        emit FlashLoanRequested(WETH, _amount);
+        emit FlashLoanRequested(WETH, _amountInwETH);
     }
 
 
@@ -55,37 +70,41 @@ contract BammArbitrage is FlashLoanSimpleReceiverBase {
         uint256 _amount,
         uint256 _premium,
         address,
-        bytes calldata
+        bytes calldata data
     ) external override returns (bool)
     {
+        (address payable receiverAddress, uint256 _amountInLusdLessFee) = abi.decode(data, (address,uint256));
         emit FlashLoanReceived(WETH, _amount, _premium);
         // Approve the Aave Pool to repay the loan
-        uint256 amountOwing = _amount + _premium;
-        IERC20(WETH).approve(address(POOL), amountOwing);
+        uint256 amountOwing = _amount.add(_premium);
+        IERC20(address(iWETH9)).approve(address(POOL), amountOwing);
 
         // Swap wETH received to LUSD on Uniswap
-        TransferHelper.safeApprove(WETH, address(swapRouter), _amount);
-        ISwapRouter.ExactInputSingleParams memory params =
-        ISwapRouter.ExactInputSingleParams({
-            tokenIn : WETH,
-            tokenOut : LUSD,
-            fee : poolFee,
+        TransferHelper.safeApprove(address(iWETH9), address(swapRouter), _amount);
+        ISwapRouter.ExactInputParams memory params =
+        ISwapRouter.ExactInputParams({
+            path : abi.encodePacked(address(iWETH9), poolFee, USDC, poolFee, LUSD),
             recipient : address(this),
             deadline : block.timestamp,
             amountIn : _amount,
-            amountOutMinimum : 0,
-            sqrtPriceLimitX96 : MIN_SQRT_RATIO
+            amountOutMinimum : _amountInLusdLessFee
         });
-
-        uint256 lusdAmount = swapRouter.exactInputSingle(params);
+        uint256 lusdAmount = swapRouter.exactInput(params);
 
         // Sell LUSD against ETH on the B.AMM
-        bamm.swap(lusdAmount, _amount, payable(address(this)));
+        IERC20(LUSD).approve(address(bamm), lusdAmount);
+        bamm.swap(lusdAmount, 0, payable(address(this)));
 
         // Wrap ETH to repay the Loan
-        iWETH9.deposit{value: address(this).balance}();
+        iWETH9.deposit{value : amountOwing}();
 
-        return true;
+        // Send the remaining ETH to the owner
+        uint256 remaining = address(this).balance;
+        (bool sent,) = receiverAddress.call{value : remaining}("");
+        require(sent, "Failed to send Ether ");
+        emit ProfitSend(receiverAddress, remaining);
+
+        return (true);
     }
 
 
@@ -98,16 +117,10 @@ contract BammArbitrage is FlashLoanSimpleReceiverBase {
         isAuthorized[_address] = !isAuthorized[_address];
     }
 
-    /**
-     * @dev Withdraw the WETH from the contract
-     */
-    function withdraw() external onlyAuthorized {
-        iWETH9.transferFrom(address(this), msg.sender, IERC20(WETH).balanceOf(address(this)));
-    }
-
     receive() external payable {}
 
     // Events
     event FlashLoanRequested(address asset, uint256 amount);
     event FlashLoanReceived(address asset, uint256 amount, uint256 premium);
+    event ProfitSend(address to, uint256 amount);
 }
