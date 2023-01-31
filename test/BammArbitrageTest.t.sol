@@ -13,7 +13,7 @@ contract BammArbitrageTest is Test {
 
     function setUp() public {
         // We use block 16501423 because we are sure that the B.Protocol as some fund to sell + Aave V3 is on mainnet
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 16501423);
+        vm.createSelectFork(vm.envString("FOUNDRY_ETH_RPC_URL"), 16501423);
         bammArbitrage = new BammArbitrage();
     }
 
@@ -78,6 +78,7 @@ contract BammArbitrageTest is Test {
         uint256 endBalance = address(this).balance;
         assertGe(endBalance, startBalance);
         (, ,uint _amountInLusdEnd) =  bammArbitrage.bamm().getLUSDValue();
+        assertGe(_amountInLusdStart, _amountInLusdEnd);
         console2.log("amount of ETH in LUSD to buy at end: ", _amountInLusdEnd);
         console2.log("balance after flashloan: ", endBalance);
         console2.log("profit made : ", endBalance.sub(startBalance));
