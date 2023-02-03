@@ -87,13 +87,13 @@ contract BammArbitrage is FlashLoanSimpleReceiverBase {
             recipient : address(this),
             deadline : block.timestamp,
             amountIn : _amount,
-            amountOutMinimum : _amountInLusdLessFee
+            amountOutMinimum : (_amountInLusdLessFee - (_amountInLusdLessFee.mul(50).div(10000))) // 0.5% slippage
         });
         uint256 lusdAmount = swapRouter.exactInput(params);
 
         // Sell LUSD against ETH on the B.AMM
         IERC20(LUSD).approve(address(bamm), lusdAmount);
-        bamm.swap(lusdAmount, 0, payable(address(this)));
+        bamm.swap(lusdAmount, amountOwing, payable(address(this)));
 
         // Wrap ETH to repay the Loan
         iWETH9.deposit{value : amountOwing}();
