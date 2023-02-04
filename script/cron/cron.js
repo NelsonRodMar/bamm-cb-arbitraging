@@ -1,7 +1,7 @@
 const {ethers} = require("ethers");
 const {FlashbotsBundleProvider,} = require("@flashbots/ethers-provider-bundle");
 require('dotenv').config({path: __dirname + '/./../../.env'});
-const AbiBammArbitrage = require('../../out/BammArbitrage.sol/BammArbitrage.json');
+const AbiBammArbitrage = require('./abi/BammArbitrage.json');
 const AbiBammCb = require('./abi/BammCb.json');
 
 async function main() {
