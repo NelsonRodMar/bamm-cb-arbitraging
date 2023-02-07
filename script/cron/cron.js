@@ -9,17 +9,16 @@ async function main() {
     const flashbotsUrl = process.env.FLASHBOT_URL,
         bammArbitrageAdresse = process.env.BAMM_ARBITRAGE_ADDRESS,
         bammCbAdresse = '0x896d8a30C32eAd64f2e1195C2C8E0932Be7Dc20B',
-        minPrice = 1500, // ETH price in $LUSD
-        blockSubmitionFlashbot = 3; // Number of block where the bundle will be submited
+        minPrice = 5000, // ETH price in $LUSD
+        blockSubmitionFlashbot = 1; // Number of block where the bundle will be submited
     const provider = new ethers.providers.JsonRpcProvider(process.env.FOUNDRY_ETH_RPC_URL);
     const bammCb = new ethers.Contract(bammCbAdresse, AbiBammCb, provider);
     let getLUSDValue = await bammCb.getLUSDValue();
     let ethLusdValue = ethers.utils.formatUnits(getLUSDValue.ethLUSDValue);
     var argv = require('minimist')(process.argv.slice(2));
     //TODO : Add a better check to see if the price is not too high compare to benefit
-    if (ethLusdValue >= minPrice || ethLusdValue >= argv.minPrice || argv.force === 'true') {
+    if ((ethLusdValue >= minPrice && argv.minPrice === undefined)  || ethLusdValue >= argv.minPrice || argv.force === 'true') {
         console.log("[info] There is : " + ethLusdValue + " Ether in $LUSD");
-        const providerGoerli = new ethers.providers.JsonRpcProvider('https://goerli.infura.io/v3/2c36d13a7e5447aa8727f457d9d29400');
         const authSigner = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
         console.log('[info] Start request flash loan');
         let ifaceBammArbitrage = new ethers.utils.Interface(AbiBammArbitrage.abi);
@@ -40,28 +39,28 @@ async function main() {
                 value: 0,
                 gasLimit: 352360,
                 chainId: 1,
-                maxFeePerGas: feeInfo.maxFeePerGas * 100,
+                maxFeePerGas: feeInfo.maxFeePerGas * 100, // TODO : Add a better way to calculate the fee
                 maxPriorityFeePerGas: feeInfo.maxPriorityFeePerGas * 10,
                 data: data,
             }
         }]);
 
-        const blockNumber = await providerGoerli.getBlockNumber();
+        const blockNumber = await provider.getBlockNumber();
         console.log("[info] Block number :", blockNumber);
 
         console.log("[info] Simulate bundle");
         const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + 1);
         if ("error" in simulation) {
-            throw new Error(`Simulation Error: ${simulation.error.message}`);
+            throw new Error(`[error]Simulation Error : ${simulation.error.message}`);
 
         } else {
             console.log("[info] Simulation Success");
+            for (var i = 1; i <= blockSubmitionFlashbot; i++) {
+                flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + i);
+                console.log("[info] Submitted for block # ", blockNumber + i);
+            }
+            //TODO : Add event listener to know the profit made
         }
-        for (var i = 1; i <= blockSubmitionFlashbot; i++) {
-            flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + i);
-            console.log("[info] Submitted for block # ", blockNumber + i);
-        }
-        //TODO : Add event listener to know the profit made
     } else {
         console.log("[info] Not enough value, only " + ethers.utils.formatUnits(getLUSDValue.ethLUSDValue) + " Ether in $LUSD");
     }
