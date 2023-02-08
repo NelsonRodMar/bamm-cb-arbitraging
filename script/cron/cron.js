@@ -16,7 +16,7 @@ async function main() {
     let getLUSDValue = await bammCb.getLUSDValue();
     let ethLusdValue = ethers.utils.formatUnits(getLUSDValue.ethLUSDValue);
     var argv = require('minimist')(process.argv.slice(2));
-    //TODO : Add a better check to see if the price is not too high compare to benefit
+    //TODO: Add a better check to see if the price is not too high compare to benefit
     if ((ethLusdValue >= minPrice && argv.minPrice === undefined)  || ethLusdValue >= argv.minPrice || argv.force === 'true') {
         console.log("[info] There is : " + ethLusdValue + " Ether in $LUSD");
         const authSigner = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
@@ -31,6 +31,7 @@ async function main() {
         );
         const wallet = new ethers.Wallet(process.env.PRIVATE_KEY);
         const feeInfo = await provider.getFeeData();
+        const blockNumber = await provider.getBlockNumber();
         const signedTransactions = await flashbotsProvider.signBundle([{
             signer: wallet,
             transaction: {
@@ -39,27 +40,26 @@ async function main() {
                 value: 0,
                 gasLimit: 352360,
                 chainId: 1,
-                maxFeePerGas: feeInfo.maxFeePerGas * 100, // TODO : Add a better way to calculate the fee
-                maxPriorityFeePerGas: feeInfo.maxPriorityFeePerGas * 10,
+                maxFeePerGas: feeInfo.maxFeePerGas, // TODO: Add a better way to calculate the fee
+                maxPriorityFeePerGas: feeInfo.maxPriorityFeePerGas,
                 data: data,
             }
         }]);
 
-        const blockNumber = await provider.getBlockNumber();
         console.log("[info] Block number :", blockNumber);
 
         console.log("[info] Simulate bundle");
-        const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + 1);
+        const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + blockSubmitionFlashbot);
         if ("error" in simulation) {
-            throw new Error(`[error]Simulation Error : ${simulation.error.message}`);
+            throw new Error(`Simulation Error : ${simulation.error.message}`);
 
+        } else if ("error" in simulation.firstRevert) {
+            console.log(`[error] Simulation Error : ${simulation.firstRevert.error}`);
         } else {
             console.log("[info] Simulation Success");
-            for (var i = 1; i <= blockSubmitionFlashbot; i++) {
-                flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + i);
-                console.log("[info] Submitted for block # ", blockNumber + i);
-            }
-            //TODO : Add event listener to know the profit made
+            flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + blockSubmitionFlashbot);
+            console.log("[info] Submitted for block # ", blockNumber + blockSubmitionFlashbot);
+            //TODO: Add event listener to know the profit made
         }
     } else {
         console.log("[info] Not enough value, only " + ethers.utils.formatUnits(getLUSDValue.ethLUSDValue) + " Ether in $LUSD");

@@ -7,6 +7,9 @@ This project also contain a JS script that call the contrat using MEV for two re
 2. Avoid to be sandwich attack when swapping the token on Uniswap<br>
 
 This project use Aave V3 FlashLoan + Uniswap and MEV Flashbot for the script.
+<br>
+<br>
+This project has been created to validate my [Ethereum Developer Bootcamp Alchemy University](https://university.alchemy.com/) certificate.
 
 
 ## How to install
