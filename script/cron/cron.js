@@ -51,10 +51,9 @@ async function main() {
         console.log("[info] Simulate bundle");
         const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + blockSubmitionFlashbot);
         if ("error" in simulation) {
-            throw new Error(`Simulation Error : ${simulation.error.message}`);
-
-        } else if ("error" in simulation.firstRevert) {
-            console.log(`[error] Simulation Error : ${simulation.firstRevert.error}`);
+            console.log(`[error] Simulation Error : ${simulation.error.message}`);
+        } else if ("error" in simulation.results[0]) {
+           console.log(`[error] Simulation Error : ${simulation.results[0].error}`);
         } else {
             console.log("[info] Simulation Success");
             flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + blockSubmitionFlashbot);
