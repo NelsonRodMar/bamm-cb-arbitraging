@@ -1,4 +1,4 @@
-# BAMM Arbitrage 
+# BAMM ChickenBonds Arbitrage 
 
 This project use Aave V3 FlashLoan to make profit by buying the ETH discounted sell by B.Protocol Chicken Bond Stability pool [contract](https://etherscan.io/address/0x896d8a30C32eAd64f2e1195C2C8E0932Be7Dc20B). 
 This project also contain a JS script that call the contrat using MEV for two reason 
